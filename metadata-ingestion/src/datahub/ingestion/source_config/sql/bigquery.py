@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -7,14 +6,14 @@ import pydantic
 
 from datahub.configuration.common import ConfigurationError
 from datahub.configuration.time_window_config import BaseTimeWindowConfig
+from datahub.ingestion.source.gcp.gcp_common import GCPSourceConfig
 from datahub.ingestion.source.sql.sql_config import SQLAlchemyConfig
 from datahub.ingestion.source_config.bigquery import BigQueryBaseConfig
-from datahub.ingestion.source_config.usage.bigquery_usage import BigQueryCredential
 
 logger = logging.getLogger(__name__)
 
 
-class BigQueryConfig(BigQueryBaseConfig, BaseTimeWindowConfig, SQLAlchemyConfig):
+class BigQueryConfig(BigQueryBaseConfig, GCPSourceConfig, BaseTimeWindowConfig, SQLAlchemyConfig):
     scheme: str = "bigquery"
     project_id: Optional[str] = pydantic.Field(
         default=None,
@@ -27,9 +26,6 @@ class BigQueryConfig(BigQueryBaseConfig, BaseTimeWindowConfig, SQLAlchemyConfig)
     log_page_size: pydantic.PositiveInt = pydantic.Field(
         default=1000,
         description="The number of log item will be queried per page for lineage collection",
-    )
-    credential: Optional[BigQueryCredential] = pydantic.Field(
-        default=None, description="BigQuery credential informations"
     )
     # extra_client_options, include_table_lineage and max_query_duration are relevant only when computing the lineage.
     extra_client_options: Dict[str, Any] = pydantic.Field(
@@ -57,7 +53,6 @@ class BigQueryConfig(BigQueryBaseConfig, BaseTimeWindowConfig, SQLAlchemyConfig)
         default=False,
         description="Whether to read date sharded tables or time partitioned tables when extracting usage from exported audit logs.",
     )
-    _credentials_path: Optional[str] = pydantic.PrivateAttr(None)
     use_v2_audit_metadata: Optional[bool] = pydantic.Field(
         default=False, description="Whether to ingest logs using the v2 format."
     )
@@ -68,13 +63,6 @@ class BigQueryConfig(BigQueryBaseConfig, BaseTimeWindowConfig, SQLAlchemyConfig)
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-
-        if self.credential:
-            self._credentials_path = self.credential.create_credential_temp_file()
-            logger.debug(
-                f"Creating temporary credential file at {self._credentials_path}"
-            )
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self._credentials_path
 
     def get_sql_alchemy_url(self, run_on_compute: bool = False) -> str:
         if self.storage_project_id and not run_on_compute:

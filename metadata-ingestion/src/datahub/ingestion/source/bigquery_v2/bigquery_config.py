@@ -1,11 +1,11 @@
 import logging
-import os
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from pydantic import Field, PositiveInt, PrivateAttr, root_validator, validator
 
 from datahub.configuration.common import AllowDenyPattern, ConfigurationError
+from datahub.ingestion.source.gcp.gcp_common import GCPSourceConfig
 from datahub.ingestion.source.sql.sql_config import SQLAlchemyConfig
 from datahub.ingestion.source.state.stateful_ingestion_base import (
     LineageStatefulIngestionConfig,
@@ -14,7 +14,6 @@ from datahub.ingestion.source.state.stateful_ingestion_base import (
 )
 from datahub.ingestion.source.usage.usage_common import BaseUsageConfig
 from datahub.ingestion.source_config.bigquery import BigQueryBaseConfig
-from datahub.ingestion.source_config.usage.bigquery_usage import BigQueryCredential
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +32,7 @@ class BigQueryUsageConfig(BaseUsageConfig):
 
 class BigQueryV2Config(
     BigQueryBaseConfig,
+    GCPSourceConfig,
     SQLAlchemyConfig,
     LineageStatefulIngestionConfig,
     UsageStatefulIngestionConfig,
@@ -145,9 +145,6 @@ class BigQueryV2Config(
         default=1000,
         description="The number of log item will be queried per page for lineage collection",
     )
-    credential: Optional[BigQueryCredential] = Field(
-        description="BigQuery credential informations"
-    )
     # extra_client_options, include_table_lineage and max_query_duration are relevant only when computing the lineage.
     extra_client_options: Dict[str, Any] = Field(
         default={},
@@ -174,7 +171,6 @@ class BigQueryV2Config(
         default=False,
         description="Whether to read date sharded tables or time partitioned tables when extracting usage from exported audit logs.",
     )
-    _credentials_path: Optional[str] = PrivateAttr(None)
 
     _cache_path: Optional[str] = PrivateAttr(None)
 
@@ -191,13 +187,6 @@ class BigQueryV2Config(
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-
-        if self.credential:
-            self._credentials_path = self.credential.create_credential_temp_file()
-            logger.debug(
-                f"Creating temporary credential file at {self._credentials_path}"
-            )
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self._credentials_path
 
     @root_validator(pre=False)
     def profile_default_settings(cls, values: Dict) -> Dict:

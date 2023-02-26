@@ -2,10 +2,11 @@ from typing import Any, Dict
 
 import pydantic
 
-from datahub.configuration.common import ConfigModel, ConfigurationError
+from datahub.configuration.common import ConfigurationError
+from datahub.ingestion.source.gcp.gcp_common import GCPSourceConfig
 
 
-class CSVEnricherConfig(ConfigModel):
+class CSVEnricherConfig(GCPSourceConfig):
     filename: str = pydantic.Field(description="Path to CSV file to ingest")
     write_semantics: str = pydantic.Field(
         default="PATCH",

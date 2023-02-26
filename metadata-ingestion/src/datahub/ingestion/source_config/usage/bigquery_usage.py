@@ -3,62 +3,19 @@ import logging
 import os
 import tempfile
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 import pydantic
 
-from datahub.configuration import ConfigModel
 from datahub.configuration.common import AllowDenyPattern, ConfigurationError
-from datahub.configuration.source_common import DatasetSourceConfigBase
+from datahub.ingestion.source.gcp.gcp_common import GCPSourceConfig
 from datahub.ingestion.source.usage.usage_common import BaseUsageConfig
 from datahub.ingestion.source_config.bigquery import BigQueryBaseConfig
 
 logger = logging.getLogger(__name__)
 
 
-class BigQueryCredential(ConfigModel):
-    project_id: str = pydantic.Field(description="Project id to set the credentials")
-    private_key_id: str = pydantic.Field(description="Private key id")
-    private_key: str = pydantic.Field(
-        description="Private key in a form of '-----BEGIN PRIVATE KEY-----\\nprivate-key\\n-----END PRIVATE KEY-----\\n'"
-    )
-    client_email: str = pydantic.Field(description="Client email")
-    client_id: str = pydantic.Field(description="Client Id")
-    auth_uri: str = pydantic.Field(
-        default="https://accounts.google.com/o/oauth2/auth",
-        description="Authentication uri",
-    )
-    token_uri: str = pydantic.Field(
-        default="https://oauth2.googleapis.com/token", description="Token uri"
-    )
-    auth_provider_x509_cert_url: str = pydantic.Field(
-        default="https://www.googleapis.com/oauth2/v1/certs",
-        description="Auth provider x509 certificate url",
-    )
-    type: str = pydantic.Field(
-        default="service_account", description="Authentication type"
-    )
-    client_x509_cert_url: Optional[str] = pydantic.Field(
-        default=None,
-        description="If not set it will be default to https://www.googleapis.com/robot/v1/metadata/x509/client_email",
-    )
-
-    @pydantic.root_validator()
-    def validate_config(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if values.get("client_x509_cert_url") is None:
-            values[
-                "client_x509_cert_url"
-            ] = f'https://www.googleapis.com/robot/v1/metadata/x509/{values["client_email"]}'
-        return values
-
-    def create_credential_temp_file(self) -> str:
-        with tempfile.NamedTemporaryFile(delete=False) as fp:
-            cred_json = json.dumps(self.dict(), indent=4, separators=(",", ": "))
-            fp.write(cred_json.encode())
-            return fp.name
-
-
-class BigQueryUsageConfig(BigQueryBaseConfig, DatasetSourceConfigBase, BaseUsageConfig):
+class BigQueryUsageConfig(BigQueryBaseConfig, GCPSourceConfig, BaseUsageConfig):
     projects: Optional[List[str]] = pydantic.Field(
         default=None,
         description="List of project ids to ingest usage from. If not specified, will infer from environment.",
@@ -112,11 +69,6 @@ class BigQueryUsageConfig(BigQueryBaseConfig, DatasetSourceConfigBase, BaseUsage
         description="Correction to pad start_time and end_time with. For handling the case where the read happens within our time range but the query completion event is delayed and happens after the configured end time.",
     )
 
-    credential: Optional[BigQueryCredential] = pydantic.Field(
-        default=None,
-        description="Bigquery credential. Required if GOOGLE_APPLICATION_CREDENTIALS environment variable is not set. See this example recipe for details",
-    )
-    _credentials_path: Optional[str] = pydantic.PrivateAttr(None)
     temp_table_dataset_prefix: str = pydantic.Field(
         default="_",
         description="If you are creating temp tables in a dataset with a particular prefix you can use this config to set the prefix for the dataset. This is to support workflows from before bigquery's introduction of temp tables. By default we use `_` because of datasets that begin with an underscore are hidden by default https://cloud.google.com/bigquery/docs/datasets#dataset-naming.",
@@ -124,12 +76,6 @@ class BigQueryUsageConfig(BigQueryBaseConfig, DatasetSourceConfigBase, BaseUsage
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        if self.credential:
-            self._credentials_path = self.credential.create_credential_temp_file()
-            logger.debug(
-                f"Creating temporary credential file at {self._credentials_path}"
-            )
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self._credentials_path
 
     @pydantic.validator("project_id")
     def note_project_id_deprecation(cls, v, values, **kwargs):
